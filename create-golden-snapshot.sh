@@ -105,7 +105,8 @@ spec:
 EOF
 
 echo "Waiting until Virtual Machine golden-vm is ready" >&2
-kubectl wait -n gitlab-runner --for=condition=Ready "vm/golden-vm" --timeout 5m
+# For VMs, kubectl wait thinks the condition is never met...
+kubectl wait -n gitlab-runner --for=condition=Ready "vmi/golden-vm" --timeout 5m
 echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
 virtctl ssh "debian@vm/golden-vm" -c 'sudo cloud-init status --wait'
 
