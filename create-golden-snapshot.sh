@@ -20,7 +20,8 @@ ssh-add <(cat id_ed25519)
 
 echo "Creating golden-vm" >&2
 
-kubectl apply -f - <<EOF
+# If the ssh key changed...
+kubectl replace --force -f - <<EOF
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
@@ -101,8 +102,8 @@ spec:
 EOF
 
 echo "Waiting until Virtual Machine golden-vm is ready" >&2
-# For VMs, kubectl wait thinks the condition is never met...
-kubectl wait -n gitlab-runner --for=condition=Ready "vmi/golden-vm" --timeout 5m
+
+kubectl wait -n gitlab-runner --for=condition=Ready vm/golden-vm --timeout 5m
 echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
 virtctl ssh "debian@vm/golden-vm" -c 'sudo cloud-init status --wait'
 
