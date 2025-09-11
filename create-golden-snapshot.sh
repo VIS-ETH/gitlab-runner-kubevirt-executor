@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Script is invoked periodically by Kubernetes CronJob to create a "golden" template VM.
+
 set -euo pipefail
 
 # We SSH immediately, without checking host key...
