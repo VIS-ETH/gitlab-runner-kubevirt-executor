@@ -65,23 +65,6 @@ spec:
             name: golden-vm
         - name: cloudinitdisk
           cloudInitNoCloud:
-
-            # Cilium, be it a blessing or a curse, does not support VM network traffic to KubeDNS or any other cluster-related networks.
-            # If it worked, we could secure it with some NetworkPolicies, but as is, we only need to worry about DNS and not using KubeDNS.
-            networkData: |
-              version: 2
-              ethernets:
-                all:
-                  match:
-                    name: "*"
-                  dhcp4: true
-                  dhcp4-overrides:
-                    use-dns: false
-                    use-domains: false
-                  nameservers:
-                    addresses:
-                      - 1.1.1.1
-                      - 8.8.8.8
             userData: |
               #cloud-config
               ssh_authorized_keys:
