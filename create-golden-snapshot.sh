@@ -10,7 +10,6 @@ mkdir -p ~/.ssh
 cat <<EOF >~/.ssh/config
 Host *
   StrictHostKeyChecking no
-  ConnectTimeout 1000
 EOF
 chmod 600 ~/.ssh/config
 
@@ -45,9 +44,6 @@ spec:
           registry:
             url: docker://quay.io/containerdisks/debian:13
   template:
-    metadata:
-      labels:
-        gitlab-runner-pipeline: untrusted
     spec:
       terminationGracePeriodSeconds: 180
       domain:

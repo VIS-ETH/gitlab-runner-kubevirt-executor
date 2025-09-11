@@ -61,6 +61,8 @@ spec:
     apiGroup: kubevirt.io
     kind: VirtualMachine
     name: $(_vm_name)
+  patches:
+    - '{"op": "add", "path": "/spec/template/metadata/labels/gitlab-runner-pipeline", "value": "untrusted"}'
 EOF
   echo "Waiting until cloning finished" >&2
   kubectl wait -n gitlab-runner vmclone clone-golden-to-$(_vm_name) --for=condition=Ready --timeout=5m
