@@ -10,7 +10,7 @@ mkdir -p ~/.ssh
 cat <<EOF >~/.ssh/config
 Host *
   StrictHostKeyChecking no
-  ConnectTimeout 600
+  ConnectTimeout 1000
 EOF
 chmod 600 ~/.ssh/config
 
