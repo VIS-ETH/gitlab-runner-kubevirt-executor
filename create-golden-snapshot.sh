@@ -44,6 +44,9 @@ spec:
           registry:
             url: docker://quay.io/containerdisks/debian:13
   template:
+    metadata:
+      labels:
+        gitlab-runner-pipeline: untrusted
     spec:
       terminationGracePeriodSeconds: 180
       domain:
