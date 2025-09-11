@@ -12,5 +12,10 @@ RUN VERSION=$(curl https://storage.googleapis.com/kubevirt-prow/release/kubevirt
   && mv virtctl /bin/virtctl \
   && chmod 755 /bin/virtctl
 
+RUN apk add jq
+
 COPY kubevirt-executor.sh /bin/kubevirt-executor.sh
 RUN chmod 755 /bin/kubevirt-executor.sh
+
+COPY create-golden-snapshot.sh /bin/create-golden-snapshot.sh
+RUN chmod 755 /bin/create-golden-snapshot.sh

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# This is called by the GitLab runner, when a Job needs to be run
+
 set -euo pipefail
 
 _vm_name() {
@@ -45,90 +47,38 @@ EOF
   chmod 600 ~/.ssh/config
 
   kubectl apply -f - <<EOF
-apiVersion: kubevirt.io/v1
-kind: VirtualMachine
+kind: VirtualMachineClone
+apiVersion: "clone.kubevirt.io/v1beta1"
 metadata:
-  name: "$(_vm_name)"
+  name: clone-golden-to-$(_vm_name)
   namespace: gitlab-runner
 spec:
-  runStrategy: Always
-  template:
-    spec:
-      terminationGracePeriodSeconds: 180
-      domain:
-        resources:
-          requests:
-            memory: '6Gi'
-            cpu: 4
-        devices:
-          disks:
-            - name: containerdisk
-              disk:
-                bus: virtio
-            - name: cloudinitdisk
-              disk:
-                bus: virtio
-      volumes:
-        - name: containerdisk
-          containerDisk:
-            image: quay.io/containerdisks/debian:13
-        - name: cloudinitdisk
-          cloudInitNoCloud:
-
-            # Cilium, be it a blessing or a curse, does not support VM network traffic to KubeDNS or any other cluster-related networks.
-            # If it worked, we could secure it with some NetworkPolicies, but as is, we only need to worry about DNS and not using KubeDNS.
-            networkData: |
-              version: 2
-              ethernets:
-                all:
-                  match:
-                    name: "*"
-                  dhcp4: true
-                  dhcp4-overrides:
-                    use-dns: false
-                    use-domains: false
-                  nameservers:
-                    addresses:
-                      - 1.1.1.1
-                      - 8.8.8.8
-            userData: |
-              #cloud-config
-              ssh_authorized_keys:
-                - "${GITLAB_KUBEVIRT_SSH_PUB_KEY}"
-                - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP6ylVtPMpT5OxsghEYjZXPadVvlgxJK7P0J3wfy0C0x jaqxues@gpg
-              packages:
-                - git
-              runcmd:
-                # See GitLab troubleshooting (causes exit code 1 at prepare stage)
-                - rm -f ~/.bash_logout /home/debian/.bash_logout
-                - sudo apt-get update
-
-                # Official docs to install docker
-                - sudo apt-get update
-                - sudo apt-get install ca-certificates curl
-                - sudo install -m 0755 -d /etc/apt/keyrings
-                - sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-                - sudo chmod a+r /etc/apt/keyrings/docker.asc
-                - |
-                  echo \
-                    "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \
-                    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-                - sudo apt-get update
-                - sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-                # "Rootless" docker
-                - sudo groupadd docker
-                - sudo usermod -aG docker debian
-                - newgrp docker
-
-                # Official docs to install gitlab-runner
-                - curl -L "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh" | sudo bash
-                - sudo apt-get install -y gitlab-runner
+  source:
+    apiGroup: kubevirt.io
+    kind: VirtualMachineSnapshot
+    name: snap-golden-vm
+  target:
+    apiGroup: kubevirt.io
+    kind: VirtualMachine
+    name: $(_vm_name)
 EOF
+  echo "Waiting until cloning finished" >&2
+  kubectl wait -n gitlab-runner vmclone clone-golden-to-$(_vm_name) --for=condition=Ready --timeout=5m
+
+  echo "Clone ready, deleting clone object and patching & starting VM" >&2
+  kubectl delete -n gitlab-runner vmclone clone-golden-to-$(_vm_name)
+
+  kubectl get vm $(_vm_name) -n gitlab-runner \
+    -o jsonpath='{.spec.template.spec.volumes[?(@.cloudInitNoCloud)].cloudInitNoCloud.userData}' |
+    sed 's|ssh-ed25519 [^"]*|'"${GITLAB_KUBEVIRT_SSH_PUB_KEY}"'|' |
+    jq -Rsa . |
+    kubectl patch vm $(_vm_name) -n gitlab-runner \
+      --type=json \
+      -p '[{"op": "replace", "path": "/spec/template/spec/volumes/1/cloudInitNoCloud/userData", "value": '"$(cat -)"'}]'
+  kubectl patch -n gitlab-runner vm $(_vm_name) --type merge -p '{"spec": {"runStrategy": "Always"}}'
 
   echo "Waiting until Virtual Machine $(_vm_name) is ready" >&2
-
   kubectl wait --for=condition=Ready "vm/$(_vm_name)" --timeout 5m
-
   echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
 
   eval $(ssh-agent -s)
@@ -147,7 +97,7 @@ run() {
 
 cleanup() {
   echo "Cleaning up virtual machine $(_vm_name)" >&2
-  kubectl delete vm "$(_vm_name)"
+  kubectl delete -n gitlab-runner vm "$(_vm_name)"
 }
 
 case "${1:-}" in
