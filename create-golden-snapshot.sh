@@ -46,6 +46,7 @@ spec:
             url: docker://quay.io/containerdisks/debian:13
   template:
     spec:
+      priorityClassName: kubevirt-preempt-pods
       terminationGracePeriodSeconds: 180
       domain:
         resources:

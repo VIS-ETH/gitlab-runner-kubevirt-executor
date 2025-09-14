@@ -61,14 +61,15 @@ spec:
     apiGroup: kubevirt.io
     kind: VirtualMachine
     name: $(_vm_name)
-  patches:
-    - '{"op": "add", "path": "/spec/template/metadata/labels/gitlab-runner-pipeline", "value": "untrusted"}'
 EOF
   echo "Waiting until cloning finished" >&2
   kubectl wait -n gitlab-runner vmclone clone-golden-to-$(_vm_name) --for=condition=Ready --timeout=5m
 
   echo "Clone ready, deleting clone object and patching & starting VM" >&2
   kubectl delete -n gitlab-runner vmclone clone-golden-to-$(_vm_name)
+
+  # This label is used in network policies
+  kubectl patch -n gitlab-runner vm $(_vm_name) --type merge -p '{"spec": {"template": {"metadata": {"labels": {"gitlab-runner-pipeline": "untrusted"}}}}}'
 
   kubectl get vm $(_vm_name) -n gitlab-runner \
     -o jsonpath='{.spec.template.spec.volumes[?(@.cloudInitNoCloud)].cloudInitNoCloud.userData}' |
