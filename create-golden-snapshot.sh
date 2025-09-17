@@ -104,9 +104,12 @@ EOF
 
 echo "Waiting until Virtual Machine golden-vm is ready" >&2
 
-kubectl wait -n gitlab-runner --for=condition=Ready vm/golden-vm --timeout 5m
+kubectl wait -n gitlab-runner --for=condition=Ready vm/golden-vm --timeout 10m
 echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
-virtctl ssh "debian@vm/golden-vm" -c 'sudo cloud-init status --wait'
+
+for i in 1 2 3 4 5; do
+  (virtctl ssh "debian@vm/golden-vm" -c 'sudo cloud-init status --wait' && break) || sleep 30
+done
 
 echo "Virtual machine ready, stopping!" >&2
 

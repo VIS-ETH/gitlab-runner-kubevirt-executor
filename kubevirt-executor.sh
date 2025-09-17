@@ -81,13 +81,15 @@ EOF
   kubectl patch -n gitlab-runner vm $(_vm_name) --type merge -p '{"spec": {"runStrategy": "Always"}}'
 
   echo "Waiting until Virtual Machine $(_vm_name) is ready" >&2
-  kubectl wait --for=condition=Ready "vm/$(_vm_name)" --timeout 5m
+  kubectl wait --for=condition=Ready "vm/$(_vm_name)" --timeout 10m
   echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
 
   eval $(ssh-agent -s)
   ssh-add <(echo $GITLAB_KUBEVIRT_SSH_PRIVATE_KEY | base64 -d)
 
-  virtctl ssh "debian@vm/$(_vm_name)" -c 'sudo cloud-init status --wait'
+  for i in 1 2 3 4 5; do
+    (virtctl ssh "debian@vm/$(_vm_name)" -c 'sudo cloud-init status --wait' && break) || sleep 30
+  done
 }
 
 run() {
