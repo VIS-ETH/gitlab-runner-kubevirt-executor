@@ -18,6 +18,27 @@ ssh-keygen -t ed25519 -f id_ed25519 -N "" -q -C "Ephemeral Kubevirt VM for Golde
 eval $(ssh-agent -s)
 ssh-add <(cat id_ed25519)
 
+echo "Rotating Master SSH Key" >&2
+# We rotate ssh keys for security, probably has at least some good effect. Also better solution than hardcoding one SSH key forever.
+# In order to ensure smooth update, include the last master key too in allowed keys.
+kubectl get secret --ignore-not-found kubevirt-rotating-master-ssh-key -o=jsonpath='{.data.master-key}' |
+  base64 -d >old_id_ed25519.pub
+
+kubectl create secret generic kubevirt-rotating-master-ssh-key \
+  -o yaml \
+  --save-config \
+  --dry-run=client \
+  --from-file=master-key=id_ed25519.pub \
+  --from-file=old-master-key=old_id_ed25519.pub |
+  kubectl apply -f -
+# Private old key can be thrown away
+kubectl create secret generic kubevirt-rotating-master-ssh-priv-key \
+  -o yaml \
+  --save-config \
+  --dry-run=client \
+  --from-file=master-key=id_ed25519 |
+  kubectl apply -f -
+
 echo "Creating golden-vm" >&2
 
 # If the ssh key changed...
@@ -61,6 +82,13 @@ spec:
             - name: cloudinitdisk
               disk:
                 bus: virtio
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: kubevirt-rotating-master-ssh-key
+            propagationMethod:
+              noCloud: {}
       volumes:
         - name: dv-containerdisk
           dataVolume:
@@ -79,6 +107,10 @@ spec:
 
                 # Just update packages
                 - sudo apt-get update && sudo apt-get full-upgrade
+
+                # Qemu-agent for dynamic ssh keys
+                - sudo apt-get install -y qemu-guest-agent
+                - sudo systemctl enable --now qemu-guest-agent
 
                 # Official docs to install docker
                 - sudo apt-get update
@@ -108,13 +140,25 @@ kubectl wait -n gitlab-runner --for=condition=Ready vm/golden-vm --timeout 10m
 echo "Virtual machine marked as ready, waiting until cloud-init target reached!" >&2
 
 for i in 1 2 3 4 5; do
-  { virtctl ssh "debian@vm/$(_vm_name)" -c 'sudo cloud-init status --wait' && break; } || sleep 30
+  { virtctl ssh "debian@vm/golden-vm" -c 'sudo cloud-init status --wait' && break; } || sleep 30
 done
 
 echo "Virtual machine ready, stopping!" >&2
 
 kubectl patch -n gitlab-runner vm golden-vm --type merge -p '{"spec": {"runStrategy": "Halted"}}'
 kubectl wait -n gitlab-runner --for=delete "vmi/golden-vm" --timeout 5m
+
+# Now that qemu-guest-agent is installed, enable dynamic SSH keys
+kubectl patch -n gitlab-runner vm golden-vm --type json -p '
+  [{
+    "op": "replace",
+    "path": "/spec/template/spec/accessCredentials/0/sshPublicKey/propagationMethod",
+    "value": {
+      "qemuGuestAgent": {
+        "users": ["debian"]
+      }
+    }
+  }]'
 
 echo "Virtual machine fully stopped. Taking snapshot" >&2
 

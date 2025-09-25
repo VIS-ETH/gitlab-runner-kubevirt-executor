@@ -10,8 +10,7 @@ _vm_name() {
 
 config() {
   echo "Loading ephemeral SSH key" >&2
-  key_file=$(mktemp -u)
-  ssh-keygen -t ed25519 -f "$key_file" -N "" -q -C "Ephemeral Kubevirt VM for GitLab runner ssh-key"
+  SSH_PRIVATE_KEY="$(kubectl get secret kubevirt-rotating-master-ssh-priv-key -o=jsonpath='{.data.master-key}')"
 
   echo "Feeding configuration output to GitLab runner controller" >&2
   cat <<EOS
@@ -25,8 +24,7 @@ config() {
     "version": "v0.0.1"
   },
   "job_env" : {
-    "GITLAB_KUBEVIRT_SSH_PRIVATE_KEY": "$(cat $key_file | base64 -w0)",
-    "GITLAB_KUBEVIRT_SSH_PUB_KEY": "$(cat "$key_file.pub")"
+    "GITLAB_KUBEVIRT_SSH_PRIVATE_KEY": "${SSH_PRIVATE_KEY}"
   },
   "shell": "bash"
 }
@@ -34,8 +32,6 @@ EOS
 }
 
 prepare() {
-  echo "Loading ephemeral ssh key: ${GITLAB_KUBEVIRT_SSH_PUB_KEY}" >&2
-
   echo "Creating VirtualMachineInstance $(_vm_name) in Kubernetes" >&2
 
   # We SSH immediately, without checking host key...
@@ -46,6 +42,7 @@ Host *
 EOF
   chmod 600 ~/.ssh/config
 
+  # No need to wait until snapshot ready, just wait until clone is ready.
   kubectl apply -f - <<EOF
 kind: VirtualMachineClone
 apiVersion: "clone.kubevirt.io/v1beta1"
@@ -71,13 +68,6 @@ EOF
   # This label is used in network policies
   kubectl patch -n gitlab-runner vm $(_vm_name) --type merge -p '{"spec": {"template": {"metadata": {"labels": {"gitlab-runner-pipeline": "untrusted"}}}}}'
 
-  kubectl get vm $(_vm_name) -n gitlab-runner \
-    -o jsonpath='{.spec.template.spec.volumes[?(@.cloudInitNoCloud)].cloudInitNoCloud.userData}' |
-    sed 's|ssh-ed25519 [^"]*|'"${GITLAB_KUBEVIRT_SSH_PUB_KEY}"'|' |
-    jq -Rsa . |
-    kubectl patch vm $(_vm_name) -n gitlab-runner \
-      --type=json \
-      -p '[{"op": "replace", "path": "/spec/template/spec/volumes/1/cloudInitNoCloud/userData", "value": '"$(cat -)"'}]'
   kubectl patch -n gitlab-runner vm $(_vm_name) --type merge -p '{"spec": {"runStrategy": "Always"}}'
 
   echo "Waiting until Virtual Machine $(_vm_name) is ready" >&2
