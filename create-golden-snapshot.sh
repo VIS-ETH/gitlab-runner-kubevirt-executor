@@ -57,11 +57,11 @@ spec:
       spec:
         pvc:
           accessModes:
-            - ReadWriteOnce
+            - ReadWriteMany
           resources:
             requests:
               storage: "15Gi"
-          storageClassName: ceph-rbd
+          storageClassName: cephfs
         source:
           registry:
             url: docker://quay.io/containerdisks/debian:13
@@ -75,6 +75,9 @@ spec:
             memory: '6Gi'
             cpu: 4
         devices:
+          interfaces:
+            - name: cilium-masq
+              masquerade: {}
           disks:
             - name: dv-containerdisk
               disk:
@@ -89,6 +92,9 @@ spec:
                 secretName: kubevirt-rotating-master-ssh-key
             propagationMethod:
               noCloud: {}
+      networks:
+        - name: cilium-masq
+          pod: {}
       volumes:
         - name: dv-containerdisk
           dataVolume:
