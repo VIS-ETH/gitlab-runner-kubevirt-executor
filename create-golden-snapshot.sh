@@ -72,8 +72,10 @@ spec:
       domain:
         resources:
           requests:
-            memory: '6Gi'
+            memory: '1Gi'
             cpu: 4
+        memory:
+          guest: 8192M
         devices:
           interfaces:
             - name: cilium-masq
